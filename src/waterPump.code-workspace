@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"name": "waterPump",
+			"path": ".."
+		},
+		{
+			"name": "URBAN_pompa",
+			"path": "../../../../../Praca inzynierska/URBAN_pompa"
+		},
+		{
+			"name": "ledAndButton",
+			"path": "../../../ledAndButton"
+		}
+	],
+	"settings": {}
+}

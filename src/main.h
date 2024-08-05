@@ -8,5 +8,6 @@
 
 //My files 
 #include "pinout.h"
+#include "LCD.h"
 
 
