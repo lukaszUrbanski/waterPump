@@ -17,3 +17,15 @@
 * **********************************************************************************************************************
 */
 
+volatile uint32_t flow_sensor_counter = 0;
+void IRAM_ATTR IncrementFlowSensorVariable(void);
+
+
+//Flow sensor init function 
+/*int FlowSensorInit()
+{
+    initDualCoreMode();
+    
+    return OWN_STATUS_OK;
+}
+*/

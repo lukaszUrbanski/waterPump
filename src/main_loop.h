@@ -39,4 +39,4 @@ typedef enum
     OWN_STATUS_ERROR,
     OWN_STATUS_BUSY,
     OWN_STATUS_TIMEOUT
-} 
+} own_status_t;

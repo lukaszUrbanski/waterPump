@@ -4,7 +4,7 @@ typedef bool tact_switch_pressed_t;
 typedef unsigned long time_from_millis_t;
 
 volatile tact_switch_pressed_t tact_switch_pressed_func = false; 
-volatile tact_switch_pressed_t on_of_tact_switch_pressed_func = false; 
+volatile tact_switch_pressed_t on_off_tact_switch_pressed_func = false; 
 volatile tact_switch_pressed_t change_value_tact_switch_pressed_func = false;
 volatile tact_switch_pressed_t change_menu_tact_switch_pressed_func = false; 
 
@@ -52,7 +52,7 @@ void GPIOInterruptInit(void)
 void IRAM_ATTR OnOffSwitchPressedActivity(void)
 {
     tact_switch_pressed_func = true;
-    on_of_tact_switch_pressed_func = true;
+    on_off_tact_switch_pressed_func = true;
 }
 
 void IRAM_ATTR ChangeValueSwitchPressedActivity(void)
@@ -76,10 +76,10 @@ uint8_t WasPressed(void)
         now = millis();
         if (now - last_trigger > button_debouncing_time)
         {
-            if (on_of_tact_switch_pressed_func)
+            if (on_off_tact_switch_pressed_func)
             {
                 tact_switch_state = ON_OF_BUTTON_SIGNAL;
-                last_trigger = now();
+                last_trigger = now;
                 #if(SERIAL_DEBUG_GPIO_PUMP)
                     Serial.println("# ON / OFF button");
                 #endif
@@ -115,7 +115,7 @@ uint8_t WasPressed(void)
     
     tact_switch_pressed_func = false;
     on_off_tact_switch_pressed_func = false;
-    change_pressure_tact_switch_pressed_func = false;
+    change_value_tact_switch_pressed_func = false;
     change_menu_tact_switch_pressed_func = false;
 
     return tact_switch_state;
