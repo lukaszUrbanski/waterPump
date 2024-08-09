@@ -1,20 +1,41 @@
-#include <main.h>
+/**
+  ******************************************************************************
+  * @file       : main.cpp
+  * @project		: Mikroprocesorowy sterownik pracą pompy wodnej
+  * @author			: Łukasz Urbański
+  * @purpose		: sterownik do silnika pompy wodnej
+  * @todo			
+  ******************************************************************************
+  **/
 
-// put function declarations here:
+#include "main.h"
 
-
-void setup() {
+void setup() 
+{
+  // Serial init
   DebugSerialInit();
+
+  // Init LCD screen
   LCDInit();
-  LCDPrintInitScreen();
+
+  // Button using GPIO init
   GPIOInterruptInit();
-  
+
+  // Init Pressure Sensor
+  PressureSensorInit();
+
+  // Init Flow Sensor
+  FlowSensorInit();
+
+  // WDG init
+  MyHWTimersInit();
+
+  // Pump init
+  PumpInit();
+
 }
 
-void loop() {
-  // put your main code here, to run repeatedly:
- 
+void loop() 
+{
+  MainProgramLoop();
 }
-  
-// put function definitions here:
-
