@@ -2,7 +2,7 @@
 
 #include "main.h"
 
-#define ON_OF_BUTTON_SIGNAL 1 
+#define ON_OFF_BUTTON_SIGNAL 1 
 #define CHANGE_VALUE_BUTTON_SIGNAL 2 
 #define CHANGE_MENU_BUTTON_SIGNAL 3
 

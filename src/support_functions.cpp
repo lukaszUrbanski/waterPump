@@ -78,7 +78,7 @@ uint8_t WasPressed(void)
         {
             if (on_off_tact_switch_pressed_func)
             {
-                tact_switch_state = ON_OF_BUTTON_SIGNAL;
+                tact_switch_state = ON_OFF_BUTTON_SIGNAL;
                 last_trigger = now;
                 #if(SERIAL_DEBUG_GPIO_PUMP)
                     Serial.println("# ON / OFF button");

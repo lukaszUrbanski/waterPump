@@ -1,244 +1,279 @@
-#include "pump_control.h"
+#include "main_loop.h"
 
-#define PWM_PUMP_CHANNEL 0
-#define PWM_PUMP_RESOLUTION 8
-#define PWM_PUMP_MAX_VALUE 256
-#define PWM_PUMP_FREQ_HZ 2000
+main_program_loop_state_t main_program_loop_state = MPL_INIT;
+lcd_state_t lcd_state = LCD_INIT;
 
-#define PUMP_IN_1_INCREASE_PRESSURE_DIRECTION LOW
-#define PUMP_IN_2_INCREASE_PRESSURE_DIRECTION HIGH
+extern volatile int watchdog_reset_timer_counter;
 
-#define PUMP_IN_1_LOWER_PRESSURE_DIRECTION HIGH
-#define PUMP_IN_2_LOWER_PRESSURE_DIRECTION LOW
+typedef bool is_pump_on_t;
+is_pump_on_t is_pump_on = false;
+is_pump_on_t last_is_pump_on = false;
 
-#define PUMP_IN_1_FAST_STOP HIGH
-#define PUMP_IN_2_FAST_STOP HIGH
+pressure_value_t pressure_possible_tab[NUMBER_OF_POSSIBLE_PRESSURE_TO_SET] = {3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0};
+uint8_t pressure_possible_tab_cnt = 0;
+
+pressure_value_t set_pressure_value = pressure_possible_tab[pressure_possible_tab_cnt];
+pressure_value_t last_set_pressure_value = pressure_possible_tab[pressure_possible_tab_cnt];
+
+pressure_value_t current_pressure_value = 0.0;
+pressure_value_t last_current_pressure_value = 0.0;
+
+pump_fill_t set_pump_fill = 0;
+pump_fill_t last_set_pump_fill = 0;
+
+flow_value_t current_flow_value = 0.0;
+flow_value_t last_current_flow_value = 0.0;
+
+type_of_error_t type_of_error = ERROR_UNKNOWN;
+
+typedef bool was_screen_changed_t;
+was_screen_changed_t was_screen_changed = true;
+
+typedef unsigned long time_from_millis_t;
+time_from_millis_t last_screen_update_time = 0UL;
+const time_from_millis_t screen_refresh_time = 1000UL;
+
+const time_from_millis_t pid_count_interval = 1000UL;
+time_from_millis_t pid_last_count = 0UL;
+
+typedef uint8_t init_refresh_counter_t;
+init_refresh_counter_t init_refresh_counter = 5;
 
 
-/*
- * PID
- */
-typedef float value_of_predefined_pressure_to_be_maintained_t;
-typedef float regulator_settings_t;
-typedef float regulator_calculations_t;
-typedef uint8_t pwm_pump_fill_t;
-typedef float error_value_t;
-typedef float temperature_value_t;
-typedef float pressure_hysteresis_value_t;
-typedef float pressure_emergency_off_value_t;
-typedef bool was_hysteresis_on_t;
+void Mpl_IdleActivity(void);
+void Mpl_InitActivity(void);
+void Mpl_SensorMeasureActivity(void);
+void Mpl_LcdUpdateActivity(void);
+void Mpl_ButtonActivity(void);
+void Mpl_PumpControlActivity(void);
+void Mpl_ErrorHandlerActivity(void);
 
-pressure_hysteresis_value_t pressure_hysteresis_value = 0.5;
-was_hysteresis_on_t was_hysteresis_on = false;
-
-pressure_emergency_off_value_t pressure_emergency_off_value = 3.0;
-
-regulator_settings_t Kp = 1.4;
-regulator_settings_t Ki = 0.5;
-regulator_settings_t Kd = 0.2;
-
-regulator_calculations_t Pout = 0.0;
-regulator_calculations_t Iout = 0.0;
-regulator_calculations_t Dout = 0.0;
-
-pwm_pump_fill_t actual_pump_fill = 0;
-
-temperature_value_t input_actural_pressure = 0.0;
-
-error_value_t error_value = 0.0;
-error_value_t last_error_value = 0.0;
-error_value_t error_sum = 0.0;
-error_value_t Derror = 0.0;
-
-int PumpSet(uint8_t pump_in_fill);
-
-int PumpInit(void)
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+//	MAIN FUNCTION TO HANDLING STAND MACHINE
+//
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void MainProgramLoop(void)
 {
-    // init pin
-    pinMode(PUMP_IN_1_PIN, OUTPUT);
-    pinMode(PUMP_IN_2_PIN, OUTPUT);
+    
+    #if(WATCHDOG_IMPLEMENTATION_PUMP)
+        if(watchdog_reset_timer_counter > 0)
+        {
+            esp_task_wdt_reset();
+            watchdog_reset_timer_counter--;
+        }
+    #endif
 
-    digitalWrite(PUMP_IN_1_PIN, LOW);
-    digitalWrite(PUMP_IN_2_PIN, LOW);
+        switch(main_program_loop_state)
+        {
+            case MPL_IDLE:
+                Mpl_IdleActivity();
+                break;
 
-    // Configure PWM functionalities
-    ledcSetup(PWM_PUMP_CHANNEL, PWM_PUMP_FREQ_HZ, PWM_PUMP_RESOLUTION);
-    // attach the channel to the GPIO to be controlled
-    ledcAttachPin(PUMP_ENA_PWM_PIN, PWM_PUMP_CHANNEL);
-    // set init value
-    ledcWrite(PWM_PUMP_CHANNEL, 0);
+            case MPL_INIT:
+                Mpl_InitActivity();
+                break;
 
-    return OWN_STATUS_OK;
+            case MPL_SENSOR_MEASURE:
+                Mpl_SensorMeasureActivity();
+                break;
+
+            case MPL_PUMP_CONTROL:
+                Mpl_PumpControlActivity();
+                break;
+
+            case MPL_LCD_UPDATE:
+                Mpl_LcdUpdateActivity();
+                break;
+
+            case MPL_BUTTON:
+                Mpl_ButtonActivity();
+                break;
+
+            case MPL_ERROR_HANDLER:
+                Mpl_ErrorHandlerActivity();
+                break;
+        }
 }
 
-int MakePumpControl(float set_pressure_value, float measured_pressure_value, uint8_t * set_pump_fill)
+///////////////////////////////////////////////////
+//
+// IDLE
+//
+void Mpl_IdleActivity(void)
 {
-    if (measured_pressure_value > set_pressure_value)
+    // Nothing to do...
+}
+
+///////////////////////////////////////////////////
+//
+// INIT
+//
+void Mpl_InitActivity(void)
+{
+    LCDPrintInitScreen();
+    init_refresh_counter = 5;
+    lcd_state = LCD_PRESSURE;
+    main_program_loop_state = MPL_SENSOR_MEASURE;
+}
+
+///////////////////////////////////////////////////
+//
+// SENSORS
+//
+void Mpl_SensorMeasureActivity(void)
+{
+    last_current_pressure_value = current_pressure_value;
+    last_current_flow_value = current_flow_value;
+
+    if(OWN_STATUS_OK != PressureSensorGetValue(&current_pressure_value))
     {
-        if(measured_pressure_value > (set_pressure_value + pressure_emergency_off_value))
-        {
-            error_value = 0.0;
-            error_sum = 0.0;
-            Derror = 0.0; 
-            was_hysteresis_on = true;
-
-            #if(SERIAL_DEBUG_PID)
-                Serial.println("$PID: measured_pressure_value > (set_pressure_value + pressure_emergency_off_value, emergency pump off");
-            #endif 
-        }
-        else
-        {
-            if(!was_hysteresis_on)
-            {
-                was_hysteresis_on = true;
-                actual_pump_fill = (actual_pump_fill*0.9);
-                #if(SERIAL_DEBUG_PID)
-                    Serial.println("$PID: measured_pressure_value > set_pressure_value - pressure_emergency_off_value, hysteresis ON, pump set 90%");
-                #endif
-            }
-                    #if(SERIAL_DEBUG_PID)
-                        Serial.print("$PID: Actual pressure: ");
-                        Serial.print(measured_pressure_value);
-                        Serial.print(". Set presure: ");
-                        Serial.print(set_pressure_value);
-                        Serial.print(". Pout: ");
-                        Serial.print(Pout);
-                        Serial.print(". Iout: ");
-                        Serial.print(Iout);
-                        Serial.print(". Dout: ");
-                        Serial.println(Dout);
-                        Serial.print("Last_error_value: ");
-                        Serial.print(last_error_value);
-                        Serial.print(". error_value: ");
-                        Serial.print(error_value);
-                        Serial.print(". actual_pump_fill: ");
-                        Serial.println(actual_pump_fill);
-                    #endif
-
-            *set_pump_fill = actual_pump_fill;
-
-            // Control Motor
-            PumpSet(actual_pump_fill);
-            // return flow value
-            return actual_pump_fill;
-        }  
-    }
-    else
-    {
-        if(was_hysteresis_on)
-        {
-            if(measured_pressure_value < (set_pressure_value - pressure_hysteresis_value)) /* has reached the cutoff value of the hysteresis loop */
-            {
-                was_hysteresis_on = false; 
-                    #if(SERIAL_DEBUG_PID)
-                        Serial.println("$PID: measured_pressure_value < (set_pressure_value - pressure_hysteresis_value, hysteresis off, pump on");
-                    #endif
-            }
-        }
-        else if(measured_pressure_value < set_pressure_value )                                              /* Count PID */
-            {
-                error_value =  set_pressure_value - measured_pressure_value; 		                        /* P */
-                error_sum = error_sum + ((error_value + last_error_value)*0.5); 							/* I */
-                Derror = (error_value - last_error_value);						                            /* D */					
-            } 
+        main_program_loop_state = MPL_ERROR_HANDLER;
+        return;
     }
     
-    Pout = Kp * error_value;		/* P */
-	Iout = Ki * error_sum;			/* I */
-	Dout = Kd * Derror;				/* D */
-
-    if(Iout > 100) Iout = 100;
-	else if(Iout < 0) Iout = 0;
-
-    actual_pump_fill = Pout + Iout + Dout;
-    if(actual_pump_fill > 100) actual_pump_fill = 100;
-    else if(actual_pump_fill < 0) actual_pump_fill = 0;
-
-        #if(SERIAL_DEBUG_PID)
-            Serial.print("$PID: Actual pressure: ");
-            Serial.print(measured_pressure_value);
-            Serial.print(". Set presure: ");
-            Serial.print(set_pressure_value);
-            Serial.print(". Pout: ");
-            Serial.print(Pout);
-            Serial.print(". Iout: ");
-            Serial.print(Iout);
-            Serial.print(". Dout: ");
-            Serial.println(Dout);
-            Serial.print("Last_error_value: ");
-            Serial.print(last_error_value);
-            Serial.print(". error_value: ");
-            Serial.print(error_value);
-            Serial.print(". actual_pump_fill: ");
-            Serial.println(actual_pump_fill);
-        #endif
-
-    last_error_value = error_value;
-
-    *set_pump_fill = actual_pump_fill;
-
-    // Control Motor
-    PumpSet(actual_pump_fill);
-    // return flow value
-    return actual_pump_fill;
+    if(OWN_STATUS_OK != FlowSensorGetValue(&current_flow_value))
+    {
+        main_program_loop_state = MPL_ERROR_HANDLER;
+        return;
+    }
+    main_program_loop_state = MPL_PUMP_CONTROL;
 }
 
-int PumpSet(uint8_t pump_in_fill)
-{   
-    uint32_t pump_max_value = PWM_PUMP_MAX_VALUE;
-    float duty_to_count = (((float)(pump_in_fill))/100.0)*((float)(pump_max_value));
-    uint32_t duty_to_set = (uint32_t)duty_to_count;
-
-    Serial.print("Pump resolution: ");
-    Serial.print(duty_to_set);
-    Serial.print("/256\r\n\r\n ");
-
-    digitalWrite(PUMP_IN_1_PIN, PUMP_IN_1_INCREASE_PRESSURE_DIRECTION);
-    digitalWrite(PUMP_IN_2_PIN, PUMP_IN_2_INCREASE_PRESSURE_DIRECTION);
-
-    ledcWrite(PWM_PUMP_CHANNEL, duty_to_set);
-
-    return OWN_STATUS_OK;
-}
-
-int PumpOff(void)
+///////////////////////////////////////////////////
+//
+// PUMP
+//
+void Mpl_PumpControlActivity(void)
 {
-    digitalWrite(PUMP_IN_1_PIN, PUMP_IN_1_FAST_STOP);
-    digitalWrite(PUMP_IN_2_PIN, PUMP_IN_1_FAST_STOP);
-
-    ledcWrite(PWM_PUMP_CHANNEL, PWM_PUMP_MAX_VALUE);
-
-    error_value = 0.0;
-    error_sum = 0.0;
-    Derror = 0.0;
-
-    last_error_value = 0.0;
-    error_value = 0.0;
-
-    #if(SERIAL_DEBUG_PUMP)
-        Serial.println("Pump OFF!");
-    #endif
-
-    return OWN_STATUS_OK;
+    if(is_pump_on)
+    {
+        if((millis() - pid_last_count) > pid_count_interval)
+        {
+            pid_last_count = millis();
+            MakePumpControl(set_pressure_value, current_pressure_value, &set_pump_fill);
+        }
+        
+    }
+    main_program_loop_state = MPL_LCD_UPDATE;
 }
 
-int PumpOn(void)
+///////////////////////////////////////////////////
+//
+// LCD
+//
+void Mpl_LcdUpdateActivity(void)
 {
-    digitalWrite(PUMP_IN_1_PIN, PUMP_IN_1_INCREASE_PRESSURE_DIRECTION);
-    digitalWrite(PUMP_IN_2_PIN, PUMP_IN_2_INCREASE_PRESSURE_DIRECTION);
+    if(LCD_INIT == lcd_state)
+    {
+        LCDPrintInitScreen();
+    }
 
-    ledcWrite(PWM_PUMP_CHANNEL, PWM_PUMP_MAX_VALUE);
+    else if(LCD_PRESSURE == lcd_state)
+    {
+        if(was_screen_changed) // if screen was changed
+        {
+            was_screen_changed = false;
+            LCDPrintPressureScreen(is_pump_on, set_pressure_value, current_pressure_value);
+            last_screen_update_time = millis();
+        }
+        else if(millis() - last_screen_update_time > screen_refresh_time) // if refresh time passed
+        {
+            if((last_current_pressure_value != current_pressure_value) || (last_set_pressure_value != set_pressure_value) || (last_is_pump_on != is_pump_on)) // if sth was changed
+            {
+                last_is_pump_on = is_pump_on;
+                last_current_pressure_value = current_pressure_value;
+                last_set_pressure_value = set_pressure_value;
+                last_screen_update_time = millis();
+                LCDUpdatePressureScreen(is_pump_on, set_pressure_value, current_pressure_value); 
+            }
+            if(init_refresh_counter > 0)
+            {
+                init_refresh_counter--;
+                last_screen_update_time = millis();
+                LCDUpdatePressureScreen(is_pump_on, set_pressure_value, current_pressure_value);
+            }
+        }
+    }
 
-    error_value = 0.0;
-    error_sum = 0.0;
-    Derror = 0.0;
+    else if(LCD_PUMP == lcd_state)
+    {
+        if(was_screen_changed)
+        {
+            was_screen_changed = false;
+            LCDPrintPumpScreen(is_pump_on, current_flow_value, set_pump_fill);
+            last_screen_update_time = millis();
+        }
+        else if(millis() - last_screen_update_time > screen_refresh_time) // if refresh time passed
+        {
+            
+            if((last_current_flow_value != current_flow_value) || (last_set_pump_fill != set_pump_fill) || (last_is_pump_on != is_pump_on))
+            {
+                last_is_pump_on = is_pump_on;
+                last_current_flow_value = current_flow_value;
+                last_set_pump_fill = set_pump_fill;
+                last_screen_update_time = millis();
+                LCDPrintPumpScreen(is_pump_on, current_flow_value, set_pump_fill); 
+            }   
+        }
+    }
 
-    last_error_value = 0.0;
-    error_value = 0.0;
+    else if(LCD_ERROR == lcd_state)
+    {
+        LCDPrintErrorScreen(type_of_error);
+        main_program_loop_state = MPL_ERROR_HANDLER;
+        last_screen_update_time = millis();
+    }
+    main_program_loop_state = MPL_BUTTON;
+}
 
+///////////////////////////////////////////////////
+//
+// BUTTON
+//
+void Mpl_ButtonActivity(void)
+{
+    uint8_t button_state = 0;
+    button_state = WasPressed();
+
+    if(button_state > 0)
+    {
+        if(ON_OFF_BUTTON_SIGNAL == button_state)
+        {
+            last_is_pump_on = is_pump_on;
+            is_pump_on = !is_pump_on;
+            if(!is_pump_on) PumpOff();
+            else PumpOn();
+        }
+
+        else if(CHANGE_VALUE_BUTTON_SIGNAL == button_state)
+        {
+            if(pressure_possible_tab_cnt < (NUMBER_OF_POSSIBLE_PRESSURE_TO_SET-1)) pressure_possible_tab_cnt++;
+            else pressure_possible_tab_cnt = 0;
+
+            last_set_pressure_value = set_pressure_value;
+            set_pressure_value = pressure_possible_tab[pressure_possible_tab_cnt];
+        }
+
+        else if(CHANGE_MENU_BUTTON_SIGNAL == button_state)
+        {
+            if(LCD_PRESSURE == lcd_state) lcd_state = LCD_PUMP;
+            else if(LCD_PUMP == lcd_state) lcd_state = LCD_PRESSURE;
+            was_screen_changed = true;
+        } 
+    }
+    main_program_loop_state = MPL_SENSOR_MEASURE;
+}
+
+///////////////////////////////////////////////////
+//
+// ERROR
+//
+void Mpl_ErrorHandlerActivity(void)
+{
     #if(SERIAL_DEBUG_PUMP)
-        Serial.println("Pump ON!");
-    #endif
-
-    return OWN_STATUS_OK;
+        Serial.println("!!! ERROR HANDLER !!!");
+    #endif  
+    lcd_state = LCD_ERROR;
 }
