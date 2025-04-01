@@ -17,8 +17,8 @@ typedef float measured_pressurre_t;
 typedef float adc_correction_value_t;
 typedef float resistors_value_k_t;
 
-resistors_value_k_t R1_value_k = 32.0;
-resistors_value_k_t R2_value_k = 32.0;
+resistors_value_k_t R1_value_k = 10.0;
+resistors_value_k_t R2_value_k = 20.0;
 
 adc_correction_value_t adc_correction_value = 0.26;
 
@@ -42,7 +42,7 @@ int PressureSensorGetValue(float * pressure_value)
     measured_voltage_on_voltage_divider_t measured_voltage_on_voltage_divider = 0.0;
     measured_voltage_from_sensor_t measured_voltage_from_sensor = 0.0;
     measured_voltage_from_sensor_t voltage_from_sensor_after_normalized = 0.0;
-    const float normalization_value = 0.48;
+    const float normalization_value = 0.87;
     measured_pressurre_t measured_pressurre = 0.0;
 
     ADC_measured_value = analogRead(PRESSURE_SENSOR_PIN);
@@ -51,17 +51,19 @@ int PressureSensorGetValue(float * pressure_value)
 
     measured_voltage_from_sensor = ((measured_voltage_on_voltage_divider * (R1_value_k + R2_value_k)) / R2_value_k) + adc_correction_value;
 
-    if(measured_voltage_from_sensor < 0.48) measured_pressurre = 0.0;
-    else if(measured_voltage_from_sensor > 4.5) measured_pressurre = 150.0;
+    if(measured_voltage_from_sensor < normalization_value) measured_pressurre = 0.0;
+    else if(measured_voltage_from_sensor > 4.5) measured_pressurre = 29;
     else
     {
         voltage_from_sensor_after_normalized = measured_voltage_from_sensor - normalization_value; // 0 < x < 4
-        measured_pressurre = (75.0 * voltage_from_sensor_after_normalized) / 2.0;
+        measured_pressurre = (8.0 * voltage_from_sensor_after_normalized);
     }
     #if(SERIAL_DEBUG_ADC)
         Serial.print("Zmierzona rozdzielczosc:  ");
         Serial.print(ADC_measured_value);
-        Serial.print(". Napiecie: ");
+        Serial.print(". Naięcie na dzielniku: ");
+        Serial.print(measured_voltage_on_voltage_divider, 3);
+        Serial.print("[V]. Napiecie z czujnika: ");
         Serial.print(measured_voltage_from_sensor, 3);
         Serial.print("[V] => ");
         Serial.print(measured_pressurre, 0);

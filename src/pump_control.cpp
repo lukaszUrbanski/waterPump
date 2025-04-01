@@ -1,3 +1,4 @@
+
 #include "pump_control.h"
 
 #define PWM_PUMP_CHANNEL 0
@@ -21,21 +22,24 @@
 typedef float value_of_predefined_pressure_to_be_maintained_t;
 typedef float regulator_settings_t;
 typedef float regulator_calculations_t;
-typedef uint8_t pwm_pump_fill_t;
+typedef int16_t pwm_pump_fill_t;
 typedef float error_value_t;
 typedef float temperature_value_t;
 typedef float pressure_hysteresis_value_t;
 typedef float pressure_emergency_off_value_t;
 typedef bool was_hysteresis_on_t;
+typedef long last_flow_time_t;
+typedef long flow_timeout_t; 
+
 
 pressure_hysteresis_value_t pressure_hysteresis_value = 0.5;
 was_hysteresis_on_t was_hysteresis_on = false;
 
-pressure_emergency_off_value_t pressure_emergency_off_value = 3.0;
+pressure_emergency_off_value_t pressure_emergency_off_value = 6.0 ; 
 
-regulator_settings_t Kp = 1.4;
-regulator_settings_t Ki = 0.5;
-regulator_settings_t Kd = 0.2;
+regulator_settings_t Kp = 5;
+regulator_settings_t Ki = 1.8;
+regulator_settings_t Kd = 0.137;
 
 regulator_calculations_t Pout = 0.0;
 regulator_calculations_t Iout = 0.0;
@@ -49,6 +53,9 @@ error_value_t error_value = 0.0;
 error_value_t last_error_value = 0.0;
 error_value_t error_sum = 0.0;
 error_value_t Derror = 0.0;
+
+last_flow_time_t last_flow_time = 0;
+flow_timeout_t flow_timeout = 3000;
 
 int PumpSet(uint8_t pump_in_fill);
 
@@ -71,11 +78,16 @@ int PumpInit(void)
     return OWN_STATUS_OK;
 }
 
-int MakePumpControl(float set_pressure_value, float measured_pressure_value, uint8_t * set_pump_fill)
+int MakePumpControl(float set_pressure_value, float measured_pressure_value, uint8_t * set_pump_fill, float flow_value, bool * is_pump_on )
 {
+    if (IsFlow(flow_value)) {
+        *is_pump_on = false;
+        return 0;
+    }
+
     if (measured_pressure_value > set_pressure_value)
     {
-        if(measured_pressure_value > (set_pressure_value + pressure_emergency_off_value))
+        if(measured_pressure_value > 15.0) //(set_pressure_value + pressure_emergency_off_value))
         {
             error_value = 0.0;
             error_sum = 0.0;
@@ -86,42 +98,42 @@ int MakePumpControl(float set_pressure_value, float measured_pressure_value, uin
                 Serial.println("$PID: measured_pressure_value > (set_pressure_value + pressure_emergency_off_value, emergency pump off");
             #endif 
         }
-        else
-        {
-            if(!was_hysteresis_on)
-            {
-                was_hysteresis_on = true;
-                actual_pump_fill = (actual_pump_fill*0.9);
-                #if(SERIAL_DEBUG_PID)
-                    Serial.println("$PID: measured_pressure_value > set_pressure_value - pressure_emergency_off_value, hysteresis ON, pump set 90%");
-                #endif
-            }
-                    #if(SERIAL_DEBUG_PID)
-                        Serial.print("$PID: Actual pressure: ");
-                        Serial.print(measured_pressure_value);
-                        Serial.print(". Set presure: ");
-                        Serial.print(set_pressure_value);
-                        Serial.print(". Pout: ");
-                        Serial.print(Pout);
-                        Serial.print(". Iout: ");
-                        Serial.print(Iout);
-                        Serial.print(". Dout: ");
-                        Serial.println(Dout);
-                        Serial.print("Last_error_value: ");
-                        Serial.print(last_error_value);
-                        Serial.print(". error_value: ");
-                        Serial.print(error_value);
-                        Serial.print(". actual_pump_fill: ");
-                        Serial.println(actual_pump_fill);
-                    #endif
+        // else
+        // {
+        //     if(!was_hysteresis_on)
+        //     {
+        //         was_hysteresis_on = true;
+        //         actual_pump_fill = (actual_pump_fill*0.9);
+        //         #if(SERIAL_DEBUG_PID)
+        //             Serial.println("$PID: measured_pressure_value > set_pressure_value - pressure_emergency_off_value, hysteresis ON, pump set 90%");
+        //         #endif
+        //     }
+        //             #if(SERIAL_DEBUG_PID)
+        //                 Serial.print("$PID: Actual pressure: ");
+        //                 Serial.print(measured_pressure_value);
+        //                 Serial.print(". Set presure: ");
+        //                 Serial.print(set_pressure_value);
+        //                 Serial.print(". Pout: ");
+        //                 Serial.print(Pout);
+        //                 Serial.print(". Iout: ");
+        //                 Serial.print(Iout);
+        //                 Serial.print(". Dout: ");
+        //                 Serial.println(Dout);
+        //                 Serial.print("Last_error_value: ");
+        //                 Serial.print(last_error_value);
+        //                 Serial.print(". error_value: ");
+        //                 Serial.print(error_value);
+        //                 Serial.print(". actual_pump_fill: ");
+        //                 Serial.println(actual_pump_fill);
+        //             #endif
 
-            *set_pump_fill = actual_pump_fill;
+        //     *set_pump_fill = actual_pump_fill;
 
-            // Control Motor
-            PumpSet(actual_pump_fill);
-            // return flow value
-            return actual_pump_fill;
-        }  
+        //     // Control Motor
+        //     PumpSet(actual_pump_fill);
+        //     // return flow value
+        //     return actual_pump_fill;
+        // }  
     }
     else
     {
@@ -135,13 +147,17 @@ int MakePumpControl(float set_pressure_value, float measured_pressure_value, uin
                     #endif
             }
         }
-        else if(measured_pressure_value < set_pressure_value )                                              /* Count PID */
-            {
-                error_value =  set_pressure_value - measured_pressure_value; 		                        /* P */
-                error_sum = error_sum + ((error_value + last_error_value)*0.5); 							/* I */
-                Derror = (error_value - last_error_value);						                            /* D */					
-            } 
+        // else if(measured_pressure_value < set_pressure_value )                                              /* Count PID */
+        //     {
+        //         error_value =  set_pressure_value - measured_pressure_value; 		                        /* P */
+        //         error_sum = error_sum + ((error_value + last_error_value)*0.5); 							/* I */
+        //         Derror = (error_value - last_error_value);						                            /* D */					
+        //     } 
+        					                            
     }
+    error_value =  set_pressure_value - measured_pressure_value;    /* P */
+    error_sum = error_sum + error_value; 							/* I */
+    Derror = (error_value - last_error_value);	                    /* D */	
     
     Pout = Kp * error_value;		/* P */
 	Iout = Ki * error_sum;			/* I */
@@ -191,7 +207,8 @@ int PumpSet(uint8_t pump_in_fill)
 
     Serial.print("Pump resolution: ");
     Serial.print(duty_to_set);
-    Serial.print("/256\r\n\r\n ");
+    Serial.println("/256\r\n\r\n ");
+
 
     digitalWrite(PUMP_IN_1_PIN, PUMP_IN_1_INCREASE_PRESSURE_DIRECTION);
     digitalWrite(PUMP_IN_2_PIN, PUMP_IN_2_INCREASE_PRESSURE_DIRECTION);
@@ -218,7 +235,7 @@ int PumpOff(void)
     #if(SERIAL_DEBUG_PUMP)
         Serial.println("Pump OFF!");
     #endif
-
+    
     return OWN_STATUS_OK;
 }
 
@@ -241,5 +258,19 @@ int PumpOn(void)
     #endif
 
     return OWN_STATUS_OK;
+}
+
+bool IsFlow(float flow_value)
+{
+    if (last_flow_time == 0) last_flow_time = millis();
+    if (flow_value > 0.0){
+        last_flow_time = millis();
+    } else if (millis() - last_flow_time > flow_timeout){
+        Serial.println("No flow detected. Turnig off the pump.");
+        last_flow_time = 0;
+        PumpOff();
+        return true;
+    }
+    return false;
 }
 

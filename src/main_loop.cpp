@@ -9,8 +9,8 @@ typedef bool is_pump_on_t;
 is_pump_on_t is_pump_on = false;
 is_pump_on_t last_is_pump_on = false;
 
-pressure_value_t pressure_possible_tab[NUMBER_OF_POSSIBLE_PRESSURE_TO_SET] = {3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0};
-uint8_t pressure_possible_tab_cnt = 0;
+pressure_value_t pressure_possible_tab[NUMBER_OF_POSSIBLE_PRESSURE_TO_SET] = {3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0 }; //{0.3, 0.4, 0.5, 0.6,  0.7, 0.8, 0.9, 1.0};//
+uint8_t pressure_possible_tab_cnt = 4;
 
 pressure_value_t set_pressure_value = pressure_possible_tab[pressure_possible_tab_cnt];
 pressure_value_t last_set_pressure_value = pressure_possible_tab[pressure_possible_tab_cnt];
@@ -33,7 +33,7 @@ typedef unsigned long time_from_millis_t;
 time_from_millis_t last_screen_update_time = 0UL;
 const time_from_millis_t screen_refresh_time = 1000UL;
 
-const time_from_millis_t pid_count_interval = 1000UL;
+const time_from_millis_t pid_count_interval = 100UL;
 time_from_millis_t pid_last_count = 0UL;
 
 typedef uint8_t init_refresh_counter_t;
@@ -152,7 +152,7 @@ void Mpl_PumpControlActivity(void)
         if((millis() - pid_last_count) > pid_count_interval)
         {
             pid_last_count = millis();
-            MakePumpControl(set_pressure_value, current_pressure_value, &set_pump_fill);
+            MakePumpControl(set_pressure_value, current_pressure_value, &set_pump_fill, current_flow_value, &is_pump_on);
         }
         
     }
@@ -241,10 +241,16 @@ void Mpl_ButtonActivity(void)
     {
         if(ON_OFF_BUTTON_SIGNAL == button_state)
         {
-            last_is_pump_on = is_pump_on;
-            is_pump_on = !is_pump_on;
-            if(!is_pump_on) PumpOff();
-            else PumpOn();
+            //last_is_pump_on = is_pump_on;
+            //is_pump_on = !is_pump_on;
+            if(is_pump_on) {
+                PumpOff();
+                is_pump_on = false;
+            }
+            else {
+                PumpOn();
+                is_pump_on = true;
+            }
         }
 
         else if(CHANGE_VALUE_BUTTON_SIGNAL == button_state)

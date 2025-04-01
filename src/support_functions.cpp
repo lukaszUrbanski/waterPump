@@ -20,7 +20,8 @@ void DebugSerialInit(void)
 {
     Serial.setTxBufferSize(1024);
     Serial.setRxBufferSize(1024);
-    Serial.begin(115200);
+    Serial.begin(9600);
+    
 
      delay(1000);
         #if(SERIAL_DEBUG_PUMP)
